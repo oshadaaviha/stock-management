@@ -53,6 +53,6 @@
     "strict": false,
     "outDir": "dist"
   },
-  "include": ["src", "../stock-managemant/src/api.ts"]
+  "include": ["src", "../stock-management/src/api.ts"]
 }
 
