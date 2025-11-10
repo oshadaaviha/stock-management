@@ -5,10 +5,12 @@ import { Dashboard } from "./components/Dashboard";
 import { ProductsPage } from "./components/ProductsPage";
 import { PurchasePage } from "./components/PurchasePage";
 import { SalesPage } from "./components/SalesPage";
+import { CustomersPage } from "./components/CustomersPage";
+import { StockPage } from './components/StockPage';
 import type { Product } from "./types";
 
 export default function App() {
-  const [tab, setTab] = useState<"dashboard" | "products" | "purchase" | "sales">("dashboard");
+  const [tab, setTab] = useState<"dashboard" | "products" | "purchase" | "sales" | "customers" | "stock">("dashboard");
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,6 +49,8 @@ export default function App() {
             <button className="btn ghost" onClick={() => setTab("products")}>Products</button>
             <button className="btn ghost" onClick={() => setTab("purchase")}>Purchase (Stock-In)</button>
             <button className="btn ghost" onClick={() => setTab("sales")}>Sales / Invoice</button>
+            <button className="btn ghost" onClick={() => setTab("customers")}>Customers</button>
+            <button className="btn ghost" onClick={() => setTab("stock")}>Stock</button>
           </nav>
         </div>
       </header>
@@ -55,6 +59,8 @@ export default function App() {
       {tab === "products" && <ProductsPage products={products} setProducts={setProducts} />}
       {tab === "purchase" && <PurchasePage products={products} setProducts={setProducts} />}
       {tab === "sales" && <SalesPage products={products} setProducts={setProducts} />}
+      {tab === "customers" && <CustomersPage />}
+          {tab === "stock" && <StockPage products={products} />}
     </div>
   );
 }

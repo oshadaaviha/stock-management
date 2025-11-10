@@ -90,9 +90,11 @@ export const salesApi = {
       phone?: string;
     };
     items: Array<{
-      productId: number;
+      sku: string;
       qty: number;
       price: number;
+      discount: number;
+      lineTotal: number;
     }>;
     tax: number;
     discount: number;
@@ -109,8 +111,8 @@ export const salesApi = {
     return data;
   },
 
-  async getInvoice(saleId: number) {
-    const r = await fetch(`${API}/sales/${saleId}/invoice`);
+  async getInvoice(invoiceNo: string) {
+    const r = await fetch(`${API}/sales/${invoiceNo}/invoice`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.text(); // Returns HTML
   }

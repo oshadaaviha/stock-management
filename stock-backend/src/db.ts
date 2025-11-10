@@ -8,5 +8,6 @@ export const pool = mysql.createPool({
   database: process.env.DB_NAME || "stockdb",
   waitForConnections: true,
   connectionLimit: 10,
+  decimalNumbers: true,
   namedPlaceholders: true,
 });
