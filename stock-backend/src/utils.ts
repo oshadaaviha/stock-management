@@ -63,10 +63,10 @@ export function invoiceHtml(inv: {
       width: 80px;
       height: 80px;
     }
-    .company-name {
-      font-size: 18pt;
-      font-weight: bold;
-      color: #0a5066;
+         pack: (inv.packX ?? 90),
+         qty: (inv.qtyX ?? 123),
+         price: (inv.priceX ?? 138),
+         disc: (inv.discX ?? 156),
       letter-spacing: 3px;
     }
     .company-tagline {
@@ -310,4 +310,212 @@ export function invoiceHtml(inv: {
   </script>
 </body>
 </html>`;
+}
+
+// Dot-matrix friendly version: prints ONLY data aligned for a pre-printed Lenama stationary.
+// Uses monospace text inside a <pre> block so column widths are predictable.
+// Supports optional horizontal/vertical offsets (mm) for calibration.
+// Query params: format=dot&offsetX=2&offsetY=3
+export function invoiceDotMatrixHtml(inv: {
+  invoice_no: string;
+  dateIso: string;
+  customer: { name: string; phone?: string; vat?: string; address?: string; salesRep?: string };
+  items: Array<{ name: string; qty: number; price: number; discount?: number; line_total: number; pack_size?: string }>;
+  sub_total: number; tax: number; discount: number; total: number;
+  batchNo?: string; paymentType?: string; routeRepCode?: string;
+  offsetX?: number; offsetY?: number; fontSizePt?: number; lineHeight?: number;
+}) {
+  // Column widths tuned for typical 80 / 132 column dot-matrix on A4 landscape pre-printed form
+  const COL_NAME = 38; // DESCRIPTION
+  const COL_PACK = 10; // PACK SIZE
+  const COL_QTY = 5;
+  const COL_PRICE = 10;
+  const COL_DISC = 6; // DISC %
+  const COL_VALUE = 12; // VALUE
+
+  function pad(str: string|number, len: number, right = true) {
+    const s = String(str ?? '');
+    if (s.length === len) return s;
+    if (s.length > len) return right ? s.slice(0, len) : s.slice(-len);
+    const padSpaces = ' '.repeat(len - s.length);
+    return right ? s + padSpaces : padSpaces + s;
+  }
+
+  function money(n: number) { return n.toFixed(2); }
+
+  // Header block positions: we rely on vertical spacing approximated for pre-printed lines.
+  const lines: string[] = [];
+  lines.push(`Customer Name : ${inv.customer.name}`);
+  lines.push(`Address       : ${(inv.customer.address||'')}`);
+  lines.push(`Sales Rep     : ${(inv.customer.salesRep||'')}`);
+  lines.push(`Customer VAT  : ${(inv.customer.vat||'')}`);
+  lines.push("");
+  lines.push(`Invoice No.   : ${inv.invoice_no}`);
+  lines.push(`Invoice Date  : ${new Date(inv.dateIso).toLocaleDateString()}`);
+  lines.push(`Batch No.     : ${(inv.batchNo||'')}`);
+  lines.push(`Payment Type  : ${(inv.paymentType||'')}`);
+  lines.push(`Route/Rep Code: ${(inv.routeRepCode||'')}`);
+  lines.push("");
+
+  // Column header (matches pre-printed headings; we still output for alignment reference, can be omitted)
+  lines.push(
+    pad('DESCRIPTION', COL_NAME) +
+    pad('PACK SIZE', COL_PACK) +
+    pad('QTY', COL_QTY, false) +
+    pad('PRICE', COL_PRICE) +
+    pad('DISC%', COL_DISC) +
+    pad('VALUE', COL_VALUE)
+  );
+  lines.push('-'.repeat(COL_NAME + COL_PACK + COL_QTY + COL_PRICE + COL_DISC + COL_VALUE));
+
+  for (const it of inv.items) {
+    const discPct = it.discount ? ((it.discount / it.price) * 100).toFixed(0) : '';
+    const value = it.line_total;
+    lines.push(
+      pad(it.name, COL_NAME) +
+      pad(it.pack_size || '', COL_PACK) +
+      pad(it.qty, COL_QTY, false) +
+      pad(money(it.price), COL_PRICE) +
+      pad(discPct, COL_DISC) +
+      pad(money(value), COL_VALUE)
+    );
+  }
+
+  lines.push('');
+  lines.push(pad('Gross Value:', 18) + money(inv.sub_total));
+  lines.push(pad('Total Discount:', 18) + money(inv.discount));
+  if (inv.tax) lines.push(pad('Tax:', 18) + money(inv.tax));
+  lines.push(pad('Net Value:', 18) + money(inv.total));
+  lines.push('');
+  lines.push('Initiated By: ______________________      Customer Signature: ______________________');
+
+  const offsetXmm = inv.offsetX ?? 0;
+  const offsetYmm = inv.offsetY ?? 0;
+  const fontSize = inv.fontSizePt ?? 11;
+  const lh = inv.lineHeight ?? 1.1;
+
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>${inv.invoice_no}</title>
+<style>
+  @page { margin: 0; }
+  body { margin: 0; font-family: 'Courier New', monospace; font-size: ${fontSize}pt; }
+  .canvas { position: absolute; left: ${offsetXmm}mm; top: ${offsetYmm}mm; white-space: pre; line-height: ${lh}; }
+  @media print { body { -webkit-print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+<div class="canvas">${lines.join('\n')}</div>
+<script>setTimeout(()=>window.print(),200);</script>
+</body></html>`;
+}
+
+// Absolute-positioned overlay for pre-printed Lenama form.
+// Only prints text; optional background image can be enabled for calibration.
+export function invoiceOverlayHtml(inv: {
+  invoice_no: string;
+  dateIso: string;
+  customer: { name: string; phone?: string; vat?: string; address?: string; salesRep?: string };
+  items: Array<{ name: string; qty: number; price: number; discount?: number; line_total: number; pack_size?: string }>;
+  sub_total: number; tax: number; discount: number; total: number;
+  batchNo?: string; paymentType?: string; routeRepCode?: string;
+  offsetX?: number; offsetY?: number; scale?: number; showBg?: boolean; bgUrl?: string;
+  // Fine alignment overrides (mm)
+  leftValueX?: number; rightValueX?: number; descX?: number; packX?: number; qtyX?: number; priceX?: number; discX?: number; valueX?: number;
+  tableStartY?: number; rowHeight?: number; totalsX?: number; totalsTopY?: number;
+  fontSizePt?: number;
+}) {
+  const mm = (n:number)=>`${n}mm`;
+  const fmt = (n:number)=>n.toFixed(2);
+  const offsetX = inv.offsetX ?? 0;
+  const offsetY = inv.offsetY ?? 0;
+  const scale = inv.scale ?? 1;
+  const showBg = !!inv.showBg && !!inv.bgUrl;
+
+  // Tunable coordinates (approx) for A4 portrait
+  const X = {
+    leftValue: (inv.leftValueX ?? 50),
+    rightValue: (inv.rightValueX ?? 150),
+    desc: (inv.descX ?? 5),
+    pack: (inv.packX ?? 75),
+    qty: (inv.qtyX ?? 110),
+    price: (inv.priceX ?? 125),
+    disc: (inv.discX ?? 150),
+    value: (inv.valueX ?? 175)
+  };
+  const Y = {
+    name: 45,
+    address: 85,
+    salesRep: 100,
+    vat: 108,
+    invNo: 37,
+    invDate: 45,
+    batchNo: 78,
+    payType: 86,
+    route: 94,
+    tableStart: (inv.tableStartY ?? 110),
+    rowH: (inv.rowHeight ?? 7),
+    totalsTop: (inv.totalsTopY ?? 200)
+  };
+
+  const lines = inv.items;
+  const maxRows = 18; // fits on the visible area of the template
+
+  function text(x:number, y:number, value:string, align: 'left'|'right'|'center'='left') {
+    const style = `left:${mm(x+offsetX)};top:${mm(y+offsetY)};` +
+      (align==='right' ? 'text-align:right;transform: translateX(-100%);' : align==='center' ? 'text-align:center;transform: translateX(-50%);' : '');
+    return `<div class="t" style="${style}">${value ?? ''}</div>`;
+  }
+
+  let html = '';
+  // Left block values
+  html += text(X.leftValue, Y.name, inv.customer.name || '');
+  html += text(X.leftValue, Y.address, inv.customer.address || '');
+  html += text(X.leftValue, Y.salesRep, inv.customer.salesRep || '');
+  html += text(X.leftValue, Y.vat, inv.customer.vat || '');
+
+  // Right block values
+  html += text(X.rightValue, Y.invNo, inv.invoice_no, 'left');
+  html += text(X.rightValue, Y.invDate, new Date(inv.dateIso).toLocaleDateString(), 'left');
+  html += text(X.rightValue, Y.batchNo, inv.batchNo || '', 'left');
+  html += text(X.rightValue, Y.payType, inv.paymentType || '', 'left');
+  html += text(X.rightValue, Y.route, inv.routeRepCode || '', 'left');
+
+  // Table lines
+  const rows = Math.min(lines.length, maxRows);
+  for (let i=0;i<rows;i++) {
+    const r = lines[i];
+    const y = Y.tableStart + i*Y.rowH;
+    html += text(X.desc, y, r.name || '', 'left');
+    html += text(X.pack, y, r.pack_size || '', 'left');
+    html += text(X.qty+6, y, String(r.qty), 'right');
+    html += text(X.price+12, y, fmt(r.price), 'right');
+    const discPct = r.discount ? ((r.discount / r.price) * 100).toFixed(0)+'%' : '';
+    html += text(X.disc+8, y, discPct, 'right');
+    html += text(X.value+12, y, fmt(r.line_total), 'right');
+  }
+
+  // Totals box (right-bottom)
+  const totalsX = inv.totalsX ?? 188;
+  let t = Y.totalsTop;
+  html += text(totalsX, t, fmt(inv.sub_total), 'right'); t += 5.5;
+  const totalAfterTax = inv.sub_total + (inv.tax||0);
+  html += text(totalsX, t, fmt(totalAfterTax), 'right'); t += 5.5;
+  html += text(totalsX, t, fmt(inv.discount), 'right'); t += 9;
+  html += text(totalsX, t, fmt(inv.total), 'right');
+
+  const bgStyle = showBg ? `background:url('${inv.bgUrl}') no-repeat top left / contain;` : '';
+
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>${inv.invoice_no}</title>
+<style>
+  @page { margin: 0; size: A4 portrait; }
+  body { margin: 0; }
+  .page { position: relative; width: 210mm; height: 297mm; ${bgStyle} transform: scale(${scale}); transform-origin: top left; }
+  .t { position: absolute; font-family: 'Courier New', monospace; font-size: ${inv.fontSizePt ?? 10}pt; color: #000; white-space: nowrap; }
+  @media print { body { -webkit-print-color-adjust: exact; } }
+</style></head>
+<body>
+  <div class="page">${html}</div>
+  <script>setTimeout(()=>window.print(),200);</script>
+</body></html>`;
 }

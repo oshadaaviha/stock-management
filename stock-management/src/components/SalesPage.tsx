@@ -13,6 +13,9 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<Array<{ id: number; name: string; phone?: string }>>([]);
+  const [showFinalDiscountModal, setShowFinalDiscountModal] = useState(false);
+  const [finalDiscount, setFinalDiscount] = useState(0);
+  const [pendingInvoiceNo, setPendingInvoiceNo] = useState("");
 
   // dropdown states
   const [showProductDropdown, setShowProductDropdown] = useState(false);
@@ -44,6 +47,9 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
     if (!p) return alert("Product not found");
     if (p.qty < qty) return alert("Not enough stock");
     
+    // Calculate discount amount from percentage
+    const discountAmount = (Number(p.price) * discount) / 100;
+    
     const existing = cart.find((i) => i.sku === p.sku);
     if (existing) {
       if (p.qty < existing.qty + qty) {
@@ -56,7 +62,7 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
         sku: p.sku, 
         name: p.name, 
         price: Number(p.price), 
-        discount: Number(discount) || Number(p.discount) || 0,
+        discount: discountAmount,
         qty 
       }]);
     }
@@ -133,20 +139,9 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
       // Set the invoice number
       setInvoiceNumber(result.invoiceNo);
 
-      // Get and show invoice
-      try {
-        const invoiceHtml = await salesApi.getInvoice(result.invoiceNo);
-        const invoiceWindow = window.open("", "_blank");
-        if (invoiceWindow) {
-          invoiceWindow.document.write(invoiceHtml);
-          invoiceWindow.document.close();
-        } else {
-          alert("Please allow pop-ups to view the invoice");
-        }
-      } catch (err) {
-        console.error("Failed to generate invoice:", err);
-        alert("Sale completed but failed to generate invoice. Please check sales history.");
-      }
+      // Show final discount modal before printing
+      setPendingInvoiceNo(result.invoiceNo);
+      setShowFinalDiscountModal(true);
 
       // Refresh products list to get updated quantities
       const updatedProducts = await productsApi.getAll();
@@ -157,9 +152,6 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
       setCustomerName("Walk-in Customer");
       setCustomerPhone("");
       
-      // Show success message
-      alert(`Sale completed successfully! Invoice: ${result.invoiceNo} | Total: Rs. ${money(total)}`);
-      
     } catch (err: any) {
       console.error("Sale error:", err);
       alert("Failed to process sale: " + (err?.message ?? "Unknown error"));
@@ -168,7 +160,29 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
     }
   }
 
-  const subTotal = cart.reduce((sum, item) => sum + item.qty * Number(item.price), 0);
+  const subTotal = cart.reduce((sum, item) => sum + (item.qty * (item.price - item.discount)), 0);
+
+  async function printInvoice() {
+    try {
+      // Get and show invoice with final discount applied
+      const invoiceHtml = await salesApi.getInvoice(pendingInvoiceNo, { format: 'overlay' });
+      const invoiceWindow = window.open("", "_blank");
+      if (invoiceWindow) {
+        invoiceWindow.document.write(invoiceHtml);
+        invoiceWindow.document.close();
+      } else {
+        alert("Please allow pop-ups to view the invoice");
+      }
+      
+      // Close modal and show success
+      setShowFinalDiscountModal(false);
+      setFinalDiscount(0);
+      alert(`Sale completed successfully! Invoice: ${pendingInvoiceNo}`);
+    } catch (err) {
+      console.error("Failed to generate invoice:", err);
+      alert("Failed to generate invoice. Please try again.");
+    }
+  }
 
   return (
     <section className="card vstack">
@@ -307,22 +321,28 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
             />
           </div> */}
           <div className="input-group" style={{ flex: 1 }}>
-            <label>Discount</label>
+            <label>Discount (%)</label>
             <input
               type="number"
               value={discount}
-              onChange={(e) => setDiscount(Math.max(0, Number(e.target.value)))}
+              onChange={(e) => setDiscount(Math.max(0, Math.min(100, Number(e.target.value))))}
               min="0"
-              placeholder="Enter discount amount"
+              max="100"
+              placeholder="Enter discount %"
             />
           </div>
           <div className="input-group" style={{ flex: 1 }}>
             <label>Quantity</label>
             <input 
-              type="number" 
+              type="text" 
               value={qty} 
-              onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
-              min="1"
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === '' || /^\d+$/.test(val)) {
+                  setQty(val === '' ? 1 : Math.max(1, Number(val)));
+                }
+              }}
+              placeholder="Qty"
             />
           </div>
           <div style={{ alignSelf: 'flex-end' }}>
@@ -350,6 +370,7 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
             {cart.map((item) => {
               const netPrice = item.price - item.discount;
               const total = item.qty * netPrice;
+              const discountPct = item.price > 0 ? (item.discount / item.price) * 100 : 0;
               return (
                 <tr key={item.sku}>
                   <td>{item.sku}</td>
@@ -358,7 +379,7 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
                   <td className="text-right">Rs. {money(item.price)}</td>
                   <td className="text-right">
                     {item.discount > 0 ? (
-                      <span className="text-success">Rs. {money(item.discount)}</span>
+                      <span className="text-success">{discountPct.toFixed(1)}%</span>
                     ) : (
                       '-'
                     )}
@@ -424,6 +445,68 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
           </div>
         )}
       </div>
+
+      {/* Final Discount Modal */}
+      {showFinalDiscountModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div className="card" style={{ minWidth: '400px', maxWidth: '500px' }}>
+            <h3 className="mb-4">Add Final Bill Discount</h3>
+            
+            <div className="input-group mb-4">
+              <label>Additional Discount (Rs.)</label>
+              <input
+                type="number"
+                value={finalDiscount}
+                onChange={(e) => setFinalDiscount(Math.max(0, Number(e.target.value)))}
+                min="0"
+                placeholder="Enter additional discount amount"
+                autoFocus
+              />
+            </div>
+
+            <div className="mb-4" style={{ padding: '12px', backgroundColor: '#f5f5f5', borderRadius: '6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span>Invoice No:</span>
+                <strong>{pendingInvoiceNo}</strong>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span>Additional Discount:</span>
+                <strong>Rs. {money(finalDiscount)}</strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                className="btn"
+                onClick={() => {
+                  setShowFinalDiscountModal(false);
+                  setFinalDiscount(0);
+                  setPendingInvoiceNo("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={printInvoice}
+              >
+                Print Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

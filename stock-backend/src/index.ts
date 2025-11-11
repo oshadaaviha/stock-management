@@ -3,7 +3,7 @@ import cors from "cors";
 import 'dotenv/config';
 import { pool } from "./db";
 import { z } from "zod";
-import { invoiceHtml, nextInvoiceNo } from "./utils";
+import { invoiceHtml, invoiceDotMatrixHtml, invoiceOverlayHtml, nextInvoiceNo } from "./utils";
 import productsRouter from "./routes/products";
 import stockRouter from "./routes/stock";
 
@@ -117,6 +117,27 @@ app.post("/api/sales", async (req, res) => {
 // fetch invoice as HTML (ready to print)
 app.get("/api/sales/:id/invoice", async (req, res) => {
   const invoiceNo = req.params.id;
+  const format = (req.query.format || req.query.mode || '').toString().toLowerCase();
+  const offsetX = req.query.offsetX ? Number(req.query.offsetX) : undefined;
+  const offsetY = req.query.offsetY ? Number(req.query.offsetY) : undefined;
+  const scale = req.query.scale ? Number(req.query.scale) : undefined;
+  const bg = req.query.showBg === '1' || req.query.showBg === 'true';
+  const bgUrl = typeof req.query.bgUrl === 'string' ? req.query.bgUrl : undefined;
+  // fine tuning
+  const leftValueX = req.query.leftValueX ? Number(req.query.leftValueX) : undefined;
+  const rightValueX = req.query.rightValueX ? Number(req.query.rightValueX) : undefined;
+  const descX = req.query.descX ? Number(req.query.descX) : undefined;
+  const packX = req.query.packX ? Number(req.query.packX) : undefined;
+  const qtyX = req.query.qtyX ? Number(req.query.qtyX) : undefined;
+  const priceX = req.query.priceX ? Number(req.query.priceX) : undefined;
+  const discX = req.query.discX ? Number(req.query.discX) : undefined;
+  const valueX = req.query.valueX ? Number(req.query.valueX) : undefined;
+  const tableStartY = req.query.tableStartY ? Number(req.query.tableStartY) : undefined;
+  const rowHeight = req.query.rowHeight ? Number(req.query.rowHeight) : undefined;
+  const totalsX = req.query.totalsX ? Number(req.query.totalsX) : undefined;
+  const totalsTopY = req.query.totalsTopY ? Number(req.query.totalsTopY) : undefined;
+  const fontSizePt = req.query.fontSize ? Number(req.query.fontSize) : undefined;
+  const lineHeight = req.query.lineHeight ? Number(req.query.lineHeight) : undefined;
   
   // Get all sales rows for this invoice (flat table structure)
   const [sRows]: any = await pool.query("SELECT * FROM sales WHERE invoice_no=?", [invoiceNo]);
@@ -139,7 +160,52 @@ app.get("/api/sales/:id/invoice", async (req, res) => {
   const subTotal = items.reduce((sum: number, item: any) => sum + item.line_total, 0);
   const totalDiscount = items.reduce((sum: number, item: any) => sum + (item.qty * item.discount), 0);
 
-  const html = invoiceHtml({
+  // Choose template based on format param
+  const html = format === 'dot'
+    ? invoiceDotMatrixHtml({
+        invoice_no: firstRow.invoice_no,
+        dateIso: new Date(firstRow.invoice_date || firstRow.created_at).toISOString(),
+        customer: {
+          name: customer?.name ?? "Walk-in Customer",
+          phone: customer?.phone ?? "",
+          vat: customer?.customer_vat ?? "",
+          address: "",
+          salesRep: ""
+        },
+        items,
+        sub_total: subTotal,
+        tax: Number(firstRow.tax) || 0,
+        discount: totalDiscount,
+        total: subTotal + (Number(firstRow.tax) || 0) - totalDiscount,
+        batchNo: "",
+        paymentType: firstRow.payment_type || "",
+        routeRepCode: "",
+        offsetX, offsetY, fontSizePt, lineHeight
+      })
+    : format === 'overlay'
+    ? invoiceOverlayHtml({
+        invoice_no: firstRow.invoice_no,
+        dateIso: new Date(firstRow.invoice_date || firstRow.created_at).toISOString(),
+        customer: {
+          name: customer?.name ?? "Walk-in Customer",
+          phone: customer?.phone ?? "",
+          vat: customer?.customer_vat ?? "",
+          address: "",
+          salesRep: ""
+        },
+        items,
+        sub_total: subTotal,
+        tax: Number(firstRow.tax) || 0,
+        discount: totalDiscount,
+        total: subTotal + (Number(firstRow.tax) || 0) - totalDiscount,
+        batchNo: "",
+        paymentType: firstRow.payment_type || "",
+        routeRepCode: "",
+        offsetX, offsetY, scale, showBg: bg, bgUrl,
+        leftValueX, rightValueX, descX, packX, qtyX, priceX, discX, valueX,
+        tableStartY, rowHeight, totalsX, totalsTopY
+      })
+    : invoiceHtml({
     company: { 
       name: "Lenama Healthcare (Pvt) Ltd", 
       address: "15 B 1/2, Alfred Place, Colombo 03", 
@@ -162,7 +228,7 @@ app.get("/api/sales/:id/invoice", async (req, res) => {
     batchNo: "",
     paymentType: firstRow.payment_type || "",
     routeRepCode: ""
-  });
+    });
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(html);
 });

@@ -111,8 +111,18 @@ export const salesApi = {
     return data;
   },
 
-  async getInvoice(invoiceNo: string) {
-    const r = await fetch(`${API}/sales/${invoiceNo}/invoice`);
+  async getInvoice(invoiceNo: string, opts?: { format?: 'dot'|'html'|'overlay'; offsetX?: number; offsetY?: number; fontSize?: number; lineHeight?: number; scale?: number; bgUrl?: string; showBg?: boolean }) {
+    const params = new URLSearchParams();
+    if (opts?.format) params.set('format', opts.format);
+    if (typeof opts?.offsetX === 'number') params.set('offsetX', String(opts.offsetX));
+    if (typeof opts?.offsetY === 'number') params.set('offsetY', String(opts.offsetY));
+    if (typeof opts?.fontSize === 'number') params.set('fontSize', String(opts.fontSize));
+    if (typeof opts?.lineHeight === 'number') params.set('lineHeight', String(opts.lineHeight));
+    if (typeof opts?.scale === 'number') params.set('scale', String(opts.scale));
+    if (opts?.bgUrl) params.set('bgUrl', opts.bgUrl);
+    if (typeof opts?.showBg === 'boolean') params.set('showBg', opts.showBg ? '1' : '0');
+    const qs = params.toString();
+    const r = await fetch(`${API}/sales/${invoiceNo}/invoice${qs ? `?${qs}` : ''}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.text(); // Returns HTML
   }
