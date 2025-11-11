@@ -165,7 +165,10 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
   async function printInvoice() {
     try {
       // Get and show invoice with final discount applied
-      const invoiceHtml = await salesApi.getInvoice(pendingInvoiceNo, { format: 'overlay' });
+      const invoiceHtml = await salesApi.getInvoice(pendingInvoiceNo, { 
+        format: 'overlay',
+        finalDiscount: finalDiscount 
+      });
       const invoiceWindow = window.open("", "_blank");
       if (invoiceWindow) {
         invoiceWindow.document.write(invoiceHtml);

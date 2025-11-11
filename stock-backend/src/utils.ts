@@ -14,15 +14,18 @@ export function invoiceHtml(inv: {
   sub_total: number; tax: number; discount: number; total: number;
   batchNo?: string; paymentType?: string; routeRepCode?: string;
 }) {
-  const rows = inv.items.map((i) =>
-    `<tr>
+  const rows = inv.items.map((i) => {
+    const discountPct = (i.price > 0 && i.discount) ? ((i.discount / i.price) * 100).toFixed(1) : '0';
+    const netLineTotal = i.qty * (i.price - (i.discount || 0));
+    return `<tr>
        <td style="padding:8px;border:1px solid #0a5066;text-align:left">${i.name}</td>
        <td style="padding:8px;border:1px solid #0a5066;text-align:center">${i.pack_size || ''}</td>
        <td style="padding:8px;border:1px solid #0a5066;text-align:center">${i.qty}</td>
        <td style="padding:8px;border:1px solid #0a5066;text-align:right">Rs. ${i.price.toFixed(2)}</td>
-       <td style="padding:8px;border:1px solid #0a5066;text-align:right">${i.discount ? i.discount.toFixed(2) + '%' : '-'}</td>
-       <td style="padding:8px;border:1px solid #0a5066;text-align:right">Rs. ${i.line_total.toFixed(2)}</td>
-     </tr>`).join("");
+       <td style="padding:8px;border:1px solid #0a5066;text-align:right">${discountPct}%</td>
+       <td style="padding:8px;border:1px solid #0a5066;text-align:right">Rs. ${netLineTotal.toFixed(2)}</td>
+     </tr>`;
+  }).join("");
 
   const grossValue = inv.sub_total;
   const totalDiscount = inv.discount;
@@ -275,10 +278,6 @@ export function invoiceHtml(inv: {
 
   <div class="totals-section">
     <div class="total-row">
-      <span>Gross Value:</span>
-      <span>Rs. ${grossValue.toFixed(2)}</span>
-    </div>
-    <div class="total-row">
       <span>Total:</span>
       <span>Rs. ${grossValue.toFixed(2)}</span>
     </div>
@@ -370,14 +369,14 @@ export function invoiceDotMatrixHtml(inv: {
 
   for (const it of inv.items) {
     const discPct = it.discount ? ((it.discount / it.price) * 100).toFixed(0) : '';
-    const value = it.line_total;
+    const netValue = it.qty * (it.price - (it.discount || 0));
     lines.push(
       pad(it.name, COL_NAME) +
       pad(it.pack_size || '', COL_PACK) +
       pad(it.qty, COL_QTY, false) +
       pad(money(it.price), COL_PRICE) +
       pad(discPct, COL_DISC) +
-      pad(money(value), COL_VALUE)
+      pad(money(netValue), COL_VALUE)
     );
   }
 
@@ -433,14 +432,14 @@ export function invoiceOverlayHtml(inv: {
 
   // Tunable coordinates (approx) for A4 portrait
   const X = {
-    leftValue: (inv.leftValueX ?? 50),
-    rightValue: (inv.rightValueX ?? 150),
-    desc: (inv.descX ?? 5),
-    pack: (inv.packX ?? 75),
-    qty: (inv.qtyX ?? 110),
-    price: (inv.priceX ?? 125),
-    disc: (inv.discX ?? 150),
-    value: (inv.valueX ?? 175)
+  leftValue: (inv.leftValueX ?? 50),
+  rightValue: (inv.rightValueX ?? 150),
+  desc: (inv.descX ?? 15),
+  pack: (inv.packX ?? 115),
+  qty: (inv.qtyX ?? 140),
+  price: (inv.priceX ?? 155),
+  disc: (inv.discX ?? 173),
+  value: (inv.valueX ?? 195)
   };
   const Y = {
     name: 45,
@@ -452,13 +451,13 @@ export function invoiceOverlayHtml(inv: {
     batchNo: 78,
     payType: 86,
     route: 94,
-    tableStart: (inv.tableStartY ?? 110),
+  tableStart: (inv.tableStartY ?? 117),
     rowH: (inv.rowHeight ?? 7),
-    totalsTop: (inv.totalsTopY ?? 200)
+  totalsTop: (inv.totalsTopY ?? 240)
   };
 
   const lines = inv.items;
-  const maxRows = 18; // fits on the visible area of the template
+  const maxRows = 10; // Maximum rows per page
 
   function text(x:number, y:number, value:string, align: 'left'|'right'|'center'='left') {
     const style = `left:${mm(x+offsetX)};top:${mm(y+offsetY)};` +
@@ -485,21 +484,20 @@ export function invoiceOverlayHtml(inv: {
   for (let i=0;i<rows;i++) {
     const r = lines[i];
     const y = Y.tableStart + i*Y.rowH;
+    const netLineTotal = r.qty * (r.price - (r.discount || 0));
     html += text(X.desc, y, r.name || '', 'left');
     html += text(X.pack, y, r.pack_size || '', 'left');
     html += text(X.qty+6, y, String(r.qty), 'right');
     html += text(X.price+12, y, fmt(r.price), 'right');
     const discPct = r.discount ? ((r.discount / r.price) * 100).toFixed(0)+'%' : '';
     html += text(X.disc+8, y, discPct, 'right');
-    html += text(X.value+12, y, fmt(r.line_total), 'right');
+    html += text(X.value+12, y, fmt(netLineTotal), 'right');
   }
 
   // Totals box (right-bottom)
   const totalsX = inv.totalsX ?? 188;
   let t = Y.totalsTop;
   html += text(totalsX, t, fmt(inv.sub_total), 'right'); t += 5.5;
-  const totalAfterTax = inv.sub_total + (inv.tax||0);
-  html += text(totalsX, t, fmt(totalAfterTax), 'right'); t += 5.5;
   html += text(totalsX, t, fmt(inv.discount), 'right'); t += 9;
   html += text(totalsX, t, fmt(inv.total), 'right');
 

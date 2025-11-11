@@ -138,6 +138,7 @@ app.get("/api/sales/:id/invoice", async (req, res) => {
   const totalsTopY = req.query.totalsTopY ? Number(req.query.totalsTopY) : undefined;
   const fontSizePt = req.query.fontSize ? Number(req.query.fontSize) : undefined;
   const lineHeight = req.query.lineHeight ? Number(req.query.lineHeight) : undefined;
+  const finalDiscount = req.query.finalDiscount ? Number(req.query.finalDiscount) : 0;
   
   // Get all sales rows for this invoice (flat table structure)
   const [sRows]: any = await pool.query("SELECT * FROM sales WHERE invoice_no=?", [invoiceNo]);
@@ -154,11 +155,13 @@ app.get("/api/sales/:id/invoice", async (req, res) => {
     qty: row.qty,
     price: row.price,
     discount: row.discount || 0,
-    line_total: row.qty * (row.price - (row.discount || 0))
+    line_total: row.qty * row.price  // Gross line value (before discount)
   }));
 
-  const subTotal = items.reduce((sum: number, item: any) => sum + item.line_total, 0);
-  const totalDiscount = items.reduce((sum: number, item: any) => sum + (item.qty * item.discount), 0);
+  const itemDiscountTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.discount), 0);
+  const grossTotal = items.reduce((sum: number, item: any) => sum + item.line_total, 0);
+  const grossAfterItemDiscounts = grossTotal - itemDiscountTotal;  // Gross value shown on invoice (after item discounts)
+  const subTotal = grossAfterItemDiscounts - finalDiscount;  // Net after final bill discount
 
   // Choose template based on format param
   const html = format === 'dot'
@@ -173,10 +176,10 @@ app.get("/api/sales/:id/invoice", async (req, res) => {
           salesRep: ""
         },
         items,
-        sub_total: subTotal,
+        sub_total: grossAfterItemDiscounts,
         tax: Number(firstRow.tax) || 0,
-        discount: totalDiscount,
-        total: subTotal + (Number(firstRow.tax) || 0) - totalDiscount,
+        discount: finalDiscount,
+        total: subTotal + (Number(firstRow.tax) || 0),
         batchNo: "",
         paymentType: firstRow.payment_type || "",
         routeRepCode: "",
@@ -194,10 +197,10 @@ app.get("/api/sales/:id/invoice", async (req, res) => {
           salesRep: ""
         },
         items,
-        sub_total: subTotal,
+        sub_total: grossAfterItemDiscounts,
         tax: Number(firstRow.tax) || 0,
-        discount: totalDiscount,
-        total: subTotal + (Number(firstRow.tax) || 0) - totalDiscount,
+        discount: finalDiscount,
+        total: subTotal + (Number(firstRow.tax) || 0),
         batchNo: "",
         paymentType: firstRow.payment_type || "",
         routeRepCode: "",
@@ -221,10 +224,10 @@ app.get("/api/sales/:id/invoice", async (req, res) => {
       salesRep: ""
     },
     items,
-    sub_total: subTotal,
+    sub_total: grossAfterItemDiscounts,
     tax: Number(firstRow.tax) || 0,
-    discount: totalDiscount,
-    total: subTotal + (Number(firstRow.tax) || 0) - totalDiscount,
+    discount: finalDiscount,
+    total: subTotal + (Number(firstRow.tax) || 0),
     batchNo: "",
     paymentType: firstRow.payment_type || "",
     routeRepCode: ""
