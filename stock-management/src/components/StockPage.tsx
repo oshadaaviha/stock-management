@@ -1,49 +1,22 @@
-import { useState, useRef, useEffect } from 'react';
-import type { Product } from '../types';   // ← only import Product
+import { useState, useEffect } from 'react';
 import { money } from '../utils';
+import type { AggregatedStockRow } from '../types';
 
-/** What the API returns for a stock row (joined with product fields) */
+/** What the API returns for a stock row (from purchase_items + products) */
 type StockBatchRow = {
   id: number;
+  purchase_id: number;
+  product_id: number;
   sku: string;
-  name: string | null;
-  batch_number: string;
+  name: string;
   mfg_date: string;
   exp_date: string;
   pack_size: string;
   price: number;
+  cost: number;
   quantity: number;
-  status: 'Active' | 'Inactive';
-  created_at?: string;
-  updated_at?: string;
+  line_total: number;
 };
-
-interface StockBatch {
-    id: number;
-    sku: string;
-    name: string | null;
-    batch_number: string;
-    mfg_date: string;
-    exp_date: string;
-    pack_size: string;
-    price: number;
-    quantity: number;
-    status: 'Active' | 'Inactive';
-    created_at?: string;
-    updated_at?: string;
-}
-
-interface StockBatchBase {
-    sku: string;
-    name: string | null;
-    batch_number: string;
-    mfg_date: string;
-    exp_date: string;
-    pack_size: string;
-    price: number;
-    quantity: number;
-    status: 'Active' | 'Inactive';
-}
 
 /** What the form edits (no id / no joined product fields) */
 type StockFormData = Omit<
@@ -51,9 +24,21 @@ type StockFormData = Omit<
   'id' | 'name' | 'sku' | 'created_at' | 'updated_at'
 >;
 
+type ViewMode = 'purchaseItems' | 'batches' | 'aggregate';
+
 const stockApi = {
   async getAll(): Promise<StockBatchRow[]> {
     const r = await fetch(`/api/stock`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  async getBatches(): Promise<(StockBatchRow & { batch_number?: string; status?: string })[]> {
+    const r = await fetch(`/api/stock/batches`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  async getAggregate(): Promise<AggregatedStockRow[]> {
+    const r = await fetch(`/api/stock/aggregate`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   },
@@ -86,42 +71,26 @@ const stockApi = {
   },
 };
 
-export function StockPage({ products }: { products: Product[] }) {
-  const [stockBatches, setStockBatches] = useState<StockBatchRow[]>([]);
+export function StockPage() {
+  const [mode, setMode] = useState<ViewMode>('purchaseItems');
+  const [stockRows, setStockRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // blank form
-  const blank: StockFormData = {
-    batch_number: '',
-    mfg_date: '',
-    exp_date: '',
-    pack_size: '',
-    price: 0,
-    quantity: 0,
-    status: 'Active',
-  };
-  const [form, setForm] = useState<StockFormData & { id?: number }>(blank);
-  const [editing, setEditing] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  useEffect(() => { loadStock(mode); }, [mode]);
 
-  useEffect(() => { loadStock(); }, []);
-  useEffect(() => {
-    const onDocClick = (e: MouseEvent) => {
-      if (!containerRef.current) return;
-      if (!containerRef.current.contains(e.target as Node)) setShowDropdown(false);
-    };
-    document.addEventListener('click', onDocClick);
-    return () => document.removeEventListener('click', onDocClick);
-  }, []);
-
-  async function loadStock() {
+  async function loadStock(view: ViewMode) {
     try {
       setLoading(true);
-      const data = await stockApi.getAll();
-      setStockBatches(data);
+      if (view === 'purchaseItems') {
+        const data = await stockApi.getAll();
+        setStockRows(data);
+      } else if (view === 'batches') {
+        const data = await stockApi.getBatches();
+        setStockRows(data);
+      } else {
+        const data = await stockApi.getAggregate();
+        setStockRows(data);
+      }
     } catch (err: any) {
       alert('Failed to load stock: ' + (err?.message ?? 'Unknown error'));
     } finally {
@@ -129,290 +98,165 @@ export function StockPage({ products }: { products: Product[] }) {
     }
   }
 
-  function reset() {
-    setForm(blank);
-    setEditing(false);
-    setSelectedProduct(null);
-    setQ('');
-  }
-
-  async function save() {
-    if (!selectedProduct) return alert('Please select a product');
-    if (!form.batch_number.trim()) return alert('Batch number is required');
-    if (!form.mfg_date) return alert('Manufacturing date is required');
-    if (!form.exp_date) return alert('Expiry date is required');
-    if (!form.pack_size.trim()) return alert('Pack size is required');
-    if (form.quantity < 0) return alert('Quantity must be zero or positive');
-    if (form.price < 0) return alert('Price must be zero or positive');
-
-    const payload = { sku: selectedProduct.sku, ...form };
-
-    try {
-      if (editing && form.id) {
-        await stockApi.update(form.id, payload);
-      } else {
-        await stockApi.create(payload);
-      }
-      await loadStock();
-      reset();
-    } catch (err: any) {
-      alert('Failed to save: ' + (err?.message ?? 'Unknown error'));
-    }
-  }
-
-  function edit(batch: StockBatchRow) {
-    // fill form with editable fields
-    const { id, batch_number, mfg_date, exp_date, pack_size, price, quantity, status } = batch;
-    setForm({ id, batch_number, mfg_date, exp_date, pack_size, price, quantity, status });
-    setEditing(true);
-    const product = products.find(p => p.sku === batch.sku) || null;
-    setSelectedProduct(product);
-    setQ(product ? product.name : '');
-  }
-
-  async function remove(id: number) {
-    if (!confirm('Delete this batch?')) return;
-    try {
-      await stockApi.remove(id);
-      await loadStock();
-    } catch (err: any) {
-      alert('Failed to delete: ' + (err?.message ?? 'Unknown error'));
-    }
-  }
-
-  const filtered = products.filter(p => {
-    if (!q.trim()) return true;
-    const s = q.toLowerCase().trim();
-    return (
-      p.name.toLowerCase().includes(s) ||
-      p.sku.toLowerCase().includes(s) ||
-      p.generic_name?.toLowerCase().includes(s) ||
-      p.brand_name?.toLowerCase().includes(s)
-    );
-  });
-
-
   return (
-    <section className="container-fluid py-3">
-      <div className="row mb-3">
-        <div className="col">
-          <h2>Stock Management</h2>
+    <section className="card vstack">
+      <h2>Stock Overview</h2>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+        <span className="muted">View:</span>
+        <div className="btn-group">
+          <button className={`btn ${mode==='purchaseItems' ? '' : 'ghost'}`} onClick={() => setMode('purchaseItems')}>Purchase Items</button>
+          <button className={`btn ${mode==='batches' ? '' : 'ghost'}`} onClick={() => setMode('batches')}>Stock Batches</button>
+          <button className={`btn ${mode==='aggregate' ? '' : 'ghost'}`} onClick={() => setMode('aggregate')}>Aggregated</button>
         </div>
       </div>
-
-      {/* Search and Form Card */}
-      <div className="card mb-4">
-        <div className="card-body">
-          <h3 className="card-title mb-4">{editing ? "Edit Stock" : "Add Stock"}</h3>
-          
-          {/* Product Search */}
-          <div className="row mb-4">
-            <div className="col-md-6" ref={containerRef}>
-              <label className="form-label">Search & Select Product</label>
-              <div className="position-relative">
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="Search by name, SKU, generic name..."
-                  value={q}
-                  onChange={e => { setQ(e.target.value); setShowDropdown(true); }}
-                  onFocus={() => setShowDropdown(true)}
-                />
-                {showDropdown && filtered.length > 0 && (
-                  <div className="position-absolute w-100 mt-1" style={{ zIndex: 1000 }}>
-                    <div className="card">
-                      <div className="list-group list-group-flush">
-                        {filtered.map(p => (
-                          <button
-                            key={p.id}
-                            className="list-group-item list-group-item-action"
-                            onClick={() => {
-                              setSelectedProduct(p);
-                              setQ(p.name);
-                              setShowDropdown(false);
-                            }}
-                          >
-                            <div className="fw-bold">{p.name}</div>
-                            <small className="text-muted">
-                              {p.sku} • {p.generic_name} • {p.brand_name}
-                            </small>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {selectedProduct && (
-            <div className="row g-3">
-              {/* Selected Product Details */}
-              <div className="col-md-12 mb-3">
-                <div className="alert alert-info">
-                  <strong>Selected Product:</strong> {selectedProduct.name}<br />
-                  <small>
-                    SKU: {selectedProduct.sku} •
-                    Generic: {selectedProduct.generic_name} •
-                    Brand: {selectedProduct.brand_name} •
-                    Current Stock: {selectedProduct.qty}
-                  </small>
-                </div>
-              </div>
-
-              {/* Batch Details Form */}
-              <div className="col-md-3">
-                <label className="form-label">Batch Number</label>
-                <input
-                  className="form-control"
-                  value={form.batch_number}
-                  onChange={e => setForm({ ...form, batch_number: e.target.value })}
-                />
-              </div>
-
-              <div className="col-md-3">
-                <label className="form-label">Manufacturing Date</label>
-                <input
-                  type="date"
-                  className="form-control"
-                  value={form.mfg_date}
-                  onChange={e => setForm({ ...form, mfg_date: e.target.value })}
-                />
-              </div>
-
-              <div className="col-md-3">
-                <label className="form-label">Expiry Date</label>
-                <input
-                  type="date"
-                  className="form-control"
-                  value={form.exp_date}
-                  onChange={e => setForm({ ...form, exp_date: e.target.value })}
-                />
-              </div>
-
-              <div className="col-md-3">
-                <label className="form-label">Pack Size</label>
-                <input
-                  className="form-control"
-                  value={form.pack_size}
-                  onChange={e => setForm({ ...form, pack_size: e.target.value })}
-                  placeholder="e.g., 10x10, 100ml"
-                />
-              </div>
-
-              <div className="col-md-3">
-                <label className="form-label">Price</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  value={form.price}
-                  onChange={e => setForm({ ...form, price: Number(e.target.value) })}
-                />
-              </div>
-
-              <div className="col-md-3">
-                <label className="form-label">Quantity</label>
-                <input
-                  type="number"
-                  className="form-control"
-                  value={form.quantity}
-                  onChange={e => setForm({ ...form, quantity: Number(e.target.value) })}
-                />
-              </div>
-
-              <div className="col-md-3">
-                <label className="form-label">Status</label>
-                <select
-                  className="form-select"
-                  value={form.status}
-                  onChange={e => setForm({ ...form, status: e.target.value as 'Active' | 'Inactive' })}
-                >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-              </div>
-
-              <div className="col-12">
-                <button className="btn btn-primary me-2" onClick={save}>
-                  {editing ? "Update Stock" : "Add Stock"}
-                </button>
-                <button className="btn btn-secondary" onClick={reset}>
-                  Reset Form
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Stock Table */}
-      <div className="card">
-        <div className="card-body">
-          <h3 className="card-title mb-4">Stock Batches</h3>
-          {loading ? (
-            <div className="text-center py-4">Loading...</div>
-          ) : (
-            <div className="table-responsive">
-              <table className="table table-striped table-bordered">
-                <thead>
-                  <tr>
-                    <th>Product</th>
-                    <th>Batch #</th>
-                    <th>Mfg Date</th>
-                    <th>Exp Date</th>
-                    <th>Pack Size</th>
-                    <th>Price</th>
-                    <th>Quantity</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stockBatches.map(batch => (
-                    <tr key={batch.id}>
-                      <td>
-                        <div>{batch.name}</div>
-                        <small className="text-muted">{batch.sku}</small>
-                      </td>
-                      <td>{batch.batch_number}</td>
-                      <td>{new Date(batch.mfg_date).toLocaleDateString()}</td>
-                      <td>{new Date(batch.exp_date).toLocaleDateString()}</td>
-                      <td>{batch.pack_size}</td>
-                      <td>Rs. {money(batch.price)}</td>
-                      <td>{batch.quantity}</td>
-                      <td>
-                        <span className={`badge ${batch.status === 'Active' ? 'bg-success' : 'bg-danger'}`}>
-                          {batch.status}
+      <p className="muted">
+        {mode==='purchaseItems' && 'Rows as recorded in purchases, grouped by SKU and sorted by expiry.'}
+        {mode==='batches' && 'Per-batch stock from stock_batches with batch number and status.'}
+        {mode==='aggregate' && 'Per product totals with earliest/latest expiry and total stock values.'}
+      </p>
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '40px' }}>Loading stock...</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          {mode==='purchaseItems' && (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Product Name</th>
+                  <th>Pack Size</th>
+                  <th>Mfg Date</th>
+                  <th>Exp Date</th>
+                  <th>Cost</th>
+                  <th>Price</th>
+                  <th>Quantity</th>
+                  <th>Line Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stockRows.map((batch: StockBatchRow) => (
+                  <tr key={batch.id}>
+                    <td><strong>{batch.sku}</strong></td>
+                    <td>{batch.name}</td>
+                    <td>{batch.pack_size}</td>
+                    <td>{batch.mfg_date ? new Date(batch.mfg_date).toLocaleDateString() : '-'}</td>
+                    <td>
+                      {batch.exp_date ? (
+                        <span style={{ 
+                          color: new Date(batch.exp_date) < new Date() ? 'red' : 
+                                 new Date(batch.exp_date) < new Date(Date.now() + 90*24*60*60*1000) ? 'orange' : 'inherit'
+                        }}>
+                          {new Date(batch.exp_date).toLocaleDateString()}
                         </span>
-                      </td>
-                      <td>
-                        <button 
-                          className="btn btn-sm btn-secondary me-1"
-                          onClick={() => edit(batch)}
-                        >
-                          Edit
-                        </button>
-                        <button 
-                          className="btn btn-sm btn-danger"
-                          onClick={() => remove(batch.id)}
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {stockBatches.length === 0 && (
-                    <tr>
-                      <td colSpan={9} className="text-center">No stock batches found</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                      ) : '-'}
+                    </td>
+                    <td>Rs. {money(batch.cost)}</td>
+                    <td>Rs. {money(batch.price)}</td>
+                    <td>{batch.quantity}</td>
+                    <td>Rs. {money(batch.line_total)}</td>
+                  </tr>
+                ))}
+                {stockRows.length === 0 && (
+                  <tr>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: '40px' }}>
+                      No stock entries found. Add stock through Purchase (Stock-In).
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+
+          {mode==='batches' && (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Product Name</th>
+                  <th>Batch No</th>
+                  <th>Pack Size</th>
+                  <th>Mfg Date</th>
+                  <th>Exp Date</th>
+                  <th>Cost</th>
+                  <th>Price</th>
+                  <th>Quantity</th>
+                  <th>Status</th>
+                  <th>Line Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stockRows.map((row: any) => (
+                  <tr key={row.id}>
+                    <td><strong>{row.sku}</strong></td>
+                    <td>{row.name}</td>
+                    <td>{row.batch_number}</td>
+                    <td>{row.pack_size}</td>
+                    <td>{row.mfg_date ? new Date(row.mfg_date).toLocaleDateString() : '-'}</td>
+                    <td>
+                      {row.exp_date ? (
+                        <span style={{ 
+                          color: new Date(row.exp_date) < new Date() ? 'red' : 
+                                 new Date(row.exp_date) < new Date(Date.now() + 90*24*60*60*1000) ? 'orange' : 'inherit'
+                        }}>
+                          {new Date(row.exp_date).toLocaleDateString()}
+                        </span>
+                      ) : '-'}
+                    </td>
+                    <td>Rs. {money(row.cost)}</td>
+                    <td>Rs. {money(row.price)}</td>
+                    <td>{row.quantity}</td>
+                    <td>{row.status}</td>
+                    <td>Rs. {money(row.line_total)}</td>
+                  </tr>
+                ))}
+                {stockRows.length === 0 && (
+                  <tr>
+                    <td colSpan={11} style={{ textAlign: 'center', padding: '40px' }}>
+                      No stock batches. Use Purchase or Batch In to add stock.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+
+          {mode==='aggregate' && (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Product Name</th>
+                  <th>Total Qty</th>
+                  <th>Earliest Exp</th>
+                  <th>Latest Exp</th>
+                  <th>Total Cost Value</th>
+                  <th>Total Price Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stockRows.map((row: AggregatedStockRow) => (
+                  <tr key={row.product_id}>
+                    <td><strong>{row.sku}</strong></td>
+                    <td>{row.name}</td>
+                    <td>{row.total_quantity}</td>
+                    <td>{row.earliest_exp ? new Date(row.earliest_exp).toLocaleDateString() : '-'}</td>
+                    <td>{row.latest_exp ? new Date(row.latest_exp).toLocaleDateString() : '-'}</td>
+                    <td>Rs. {money(row.total_cost_value)}</td>
+                    <td>Rs. {money(row.total_price_value)}</td>
+                  </tr>
+                ))}
+                {stockRows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '40px' }}>
+                      No stock found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           )}
         </div>
-      </div>
+      )}
     </section>
   );
 }

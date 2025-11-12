@@ -3,10 +3,11 @@ import type { Customer } from "../types";
 import { customersApi } from "../api";
 
 export function CustomersPage() {
-  const blank: Customer = { id: 0, name: "", phone: "", email: "" } as Customer;
+  const blank: Customer = { id: 0, name: "", phone: "", email: "", customer_address: "", customer_vat: "", route: "", sales_rep_id: undefined } as Customer;
   const [list, setList] = useState<Customer[]>([]);
   const [form, setForm] = useState<Customer>(blank);
   const [editing, setEditing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -27,7 +28,9 @@ export function CustomersPage() {
   async function load() {
     try {
       const data = await customersApi.getAll();
-      setList(data);
+      // Filter to show only manually added customers (exclude auto-created from sales)
+      const systemCustomers = data.filter((c: Customer) => c.is_system !== false);
+      setList(systemCustomers);
     } catch (err: any) {
       alert("Failed to load customers: " + (err?.message ?? ""));
     }
@@ -40,18 +43,24 @@ export function CustomersPage() {
 
   async function save() {
     if (!form.name?.trim()) return alert("Customer name is required");
+    setLoading(true);
     try {
       if (editing) {
         await customersApi.update(form.id, form);
         setList(list.map((c) => (c.id === form.id ? form : c)));
+        alert("Customer updated successfully!");
       } else {
         const created = await customersApi.create(form);
         // backend returns created object with id
         setList([created, ...list]);
+        alert("Customer added successfully!");
       }
       reset();
     } catch (err: any) {
-      alert("Failed to save: " + (err?.message ?? ""));
+      console.error("Save error:", err);
+      alert("Failed to save: " + (err?.message ?? "Unknown error"));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -73,23 +82,30 @@ export function CustomersPage() {
   const filtered = list.filter((c) => {
     if (!q.trim()) return true;
     const s = q.trim().toLowerCase();
-    return c.name?.toLowerCase().includes(s) || (c.phone ?? "").toLowerCase().includes(s) || (c.email ?? "").toLowerCase().includes(s);
+    return c.name?.toLowerCase().includes(s) || 
+           (c.phone ?? "").toLowerCase().includes(s) || 
+           (c.email ?? "").toLowerCase().includes(s) ||
+           (c.customer_address ?? "").toLowerCase().includes(s) ||
+           (c.customer_vat ?? "").toLowerCase().includes(s);
   });
 
   return (
     <section className="card vstack">
       <h2>Customers</h2>
 
-      <div className="hstack" style={{ gap: 12 }}>
+      <div className="hstack" style={{ gap: 12, marginBottom: 20 }}>
         <div style={{ flex: 1 }} ref={containerRef}>
           <div style={{ position: 'relative', maxWidth: 420 }}>
-            <input className="input" placeholder="Search by name, phone or email" value={q} onChange={(e) => { setQ(e.target.value); setShowDropdown(true); }} onFocus={() => setShowDropdown(true)} />
+            <input className="input" placeholder="Search by name, phone, email, address or VAT" value={q} onChange={(e) => { setQ(e.target.value); setShowDropdown(true); }} onFocus={() => setShowDropdown(true)} />
             {showDropdown && q.trim() && (
               <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', background: 'white', border: '1px solid #ddd', borderRadius: 6, boxShadow: '0 6px 18px rgba(0,0,0,0.08)', zIndex: 40, maxHeight: 260, overflow: 'auto' }}>
                 {filtered.slice(0, 8).map((c) => (
                   <div key={c.id} onClick={() => { setQ(c.name); setShowDropdown(false); }} style={{ padding: '8px 12px', cursor: 'pointer' }}>
                     <div style={{ fontWeight: 600 }}>{c.name}</div>
-                    <div style={{ fontSize: 12, color: '#666' }}>{c.phone ?? ''} • {c.email ?? ''}</div>
+                    <div style={{ fontSize: 12, color: '#666' }}>
+                      {c.phone ?? ''} {c.phone && c.email ? '•' : ''} {c.email ?? ''}
+                      {c.customer_address && <> • {c.customer_address}</>}
+                    </div>
                   </div>
                 ))}
                 {filtered.length === 0 && <div style={{ padding: 12, color: '#666' }}>No results</div>}
@@ -97,19 +113,71 @@ export function CustomersPage() {
             )}
           </div>
         </div>
-        <div>
-          <button className="btn" onClick={() => { reset(); setEditing(false); }}>New Customer</button>
+      </div>
+
+      {/* Add/Edit Customer Form */}
+      <div className="card vstack" style={{ marginBottom: 20 }}>
+        <h3>{editing ? "Edit Customer" : "Add New Customer"}</h3>
+        
+        <div className="hstack" style={{ gap: 16, alignItems: 'start' }}>
+          <div style={{ flex: 1 }}>
+            <label>Name *</label>
+            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Customer name" />
+          </div>
+          
+          <div style={{ flex: 1 }}>
+            <label>Phone</label>
+            <input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value || undefined })} placeholder="Phone number" />
+          </div>
+          
+          <div style={{ flex: 1 }}>
+            <label>Email</label>
+            <input type="email" value={form.email ?? ""} onChange={(e) => setForm({ ...form, email: e.target.value || undefined })} placeholder="Email address" />
+          </div>
+        </div>
+
+        <div className="hstack" style={{ gap: 16, alignItems: 'start' }}>
+          <div style={{ flex: 1 }}>
+            <label>Address</label>
+            <textarea 
+              value={form.customer_address ?? ""} 
+              onChange={(e) => setForm({ ...form, customer_address: e.target.value || undefined })} 
+              placeholder="Full address"
+              rows={2}
+              style={{ resize: 'vertical' }}
+            />
+          </div>
+          
+          <div style={{ flex: 1 }}>
+            <label>VAT Number</label>
+            <input value={form.customer_vat ?? ""} onChange={(e) => setForm({ ...form, customer_vat: e.target.value || undefined })} placeholder="VAT registration number" />
+            
+            <label style={{ marginTop: 8 }}>Route</label>
+            <input value={form.route ?? ""} onChange={(e) => setForm({ ...form, route: e.target.value || undefined })} placeholder="Delivery route" />
+          </div>
+        </div>
+        
+        <div className="hstack" style={{ gap: 8, marginTop: 12 }}>
+          <button className="btn primary" onClick={save} disabled={loading}>
+            {loading ? "Saving..." : editing ? "Update Customer" : "Add Customer"}
+          </button>
+          <button className="btn" onClick={reset} disabled={loading}>Clear</button>
+          {editing && <button className="btn" onClick={() => { reset(); setEditing(false); }} disabled={loading}>Cancel Edit</button>}
         </div>
       </div>
 
-      <div className="hstack" style={{ gap: 20, marginTop: 12 }}>
-        <div style={{ flex: 1 }}>
-          <table>
+      {/* Customer List Table */}
+      <div>
+        <h3 style={{ marginBottom: 12 }}>Customer List ({filtered.length})</h3>
+        <table>
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Phone</th>
                 <th>Email</th>
+                <th>Address</th>
+                <th>VAT No</th>
+                <th>Route</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -119,6 +187,9 @@ export function CustomersPage() {
                   <td>{c.name}</td>
                   <td>{c.phone}</td>
                   <td>{c.email}</td>
+                  <td>{c.customer_address}</td>
+                  <td>{c.customer_vat}</td>
+                  <td>{c.route}</td>
                   <td>
                     <button className="btn ghost" onClick={() => edit(c)}>Edit</button>
                     <button className="btn danger" onClick={() => remove(c.id)}>Delete</button>
@@ -127,28 +198,11 @@ export function CustomersPage() {
               ))}
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={4}>No customers</td>
+                  <td colSpan={7}>No customers found</td>
                 </tr>
               )}
             </tbody>
           </table>
-        </div>
-
-        <div style={{ width: 360 }}>
-          <div className="card vstack">
-            <h3>{editing ? "Edit Customer" : "New Customer"}</h3>
-            <label>Name</label>
-            <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <label>Phone</label>
-            <input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value || undefined })} />
-            <label>Email</label>
-            <input value={form.email ?? ""} onChange={(e) => setForm({ ...form, email: e.target.value || undefined })} />
-            <div className="hstack" style={{ gap: 8 }}>
-              <button className="btn primary" onClick={save}>{editing ? "Save" : "Add"}</button>
-              <button className="btn" onClick={reset}>Reset</button>
-            </div>
-          </div>
-        </div>
       </div>
     </section>
   );

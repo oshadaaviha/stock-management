@@ -1,3 +1,7 @@
+const API = "http://localhost:8080/api";
+
+const headers = { "Content-Type": "application/json" };
+
 export const customersApi = {
   async getAll() {
     const r = await fetch(`${API}/customers`);
@@ -28,9 +32,7 @@ export const customersApi = {
     return r.json();
   }
 };
-const API = "http://localhost:8080/api";
 
-const headers = { "Content-Type": "application/json" };
 
 export const productsApi = {
   async getAll() {
@@ -67,10 +69,15 @@ export const purchaseApi = {
   async create(purchase: {
     refNo?: string;
     supplier?: string;
+    batch_number?: string;
     items: Array<{
       productId: number;
-      qty: number;
+      mfg_date: string;
+      exp_date: string;
+      pack_size: string;
+      price: number;
       cost: number;
+      qty: number;
     }>;
   }) {
     const r = await fetch(`${API}/purchases`, {
@@ -88,18 +95,28 @@ export const salesApi = {
     customer: {
       name: string;
       phone?: string;
+      customer_address?: string;
+      customer_vat?: string;
+      sales_rep_id?: number;
     };
     items: Array<{
       sku: string;
       qty: number;
       price: number;
       discount: number;
+      packSize?: string;
       lineTotal: number;
+      batchNo?: string;
     }>;
     tax: number;
     discount: number;
     subTotal: number;
     total: number;
+    invoiceDate?: string;
+    batchNo?: string;
+    paymentType?: string;
+    routeRepCode?: string;
+    salesRepName?: string;
   }) {
     const r = await fetch(`${API}/sales`, {
       method: "POST",

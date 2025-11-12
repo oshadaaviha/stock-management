@@ -12,6 +12,18 @@ export interface StockBatch {
   status: 'Active' | 'Inactive';
 }
 
+// Aggregated stock view per product (from purchase_items)
+export interface AggregatedStockRow {
+  product_id: number;
+  sku: string;
+  name: string;
+  total_quantity: number;
+  earliest_exp: string | null;
+  latest_exp: string | null;
+  total_cost_value: number;
+  total_price_value: number;
+}
+
 export type Product = {
   id: number;
   sku: string;
@@ -32,7 +44,8 @@ export type CartItem = {
   name: string; 
   price: number; 
   discount: number;
-  qty: number 
+  qty: number;
+  batchNo?: string; // optional per-item batch reference
 };
 
 export type Customer = {
@@ -40,4 +53,10 @@ export type Customer = {
   name: string;
   phone?: string;
   email?: string;
+  customer_address?: string;
+  customer_vat?: string;
+  route?: string;
+  sales_rep_id?: number;
+  created_at?: string;
+  is_system?: boolean; // true if manually added, false if auto-created from sales
 };
