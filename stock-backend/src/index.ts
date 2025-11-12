@@ -100,14 +100,16 @@ app.post("/api/sales", async (req, res) => {
 
     // Check if customer exists (by name and phone match)
     let customerId: number;
+    let customerCode: string | null = null;
     const [existingCustomers]: any = await conn.query(
-      "SELECT id FROM customers WHERE name=? AND is_system=TRUE LIMIT 1", 
+      "SELECT id, customer_code FROM customers WHERE name=? AND is_system=TRUE LIMIT 1", 
       [d.customer.name]
     );
     
     if (existingCustomers.length > 0) {
       // Use existing system customer
       customerId = existingCustomers[0].id;
+      customerCode = existingCustomers[0].customer_code;
       // Optionally update address/vat/sales_rep_id if provided
       await conn.query(
         "UPDATE customers SET customer_address=?, customer_vat=?, sales_rep_id=? WHERE id=?",
@@ -304,8 +306,8 @@ app.get("/api/sales/:id/invoice", async (req, res) => {
   const grossAfterItemDiscounts = grossTotal - itemDiscountTotal;  // Gross value shown on invoice (after item discounts)
   const subTotal = grossAfterItemDiscounts - finalDiscount;  // Net after final bill discount
 
-  // Generate customer code
-  const customerCode = customer ? `CUST-${customer.id.toString().padStart(4, '0')}` : '';
+  // Use customer_code from database, or fallback to empty string
+  const customerCode = customer?.customer_code || '';
 
   // Choose template based on format param
   const html = format === 'dot'
@@ -363,6 +365,7 @@ app.get("/api/sales/:id/invoice", async (req, res) => {
     invoice_no: firstRow.invoice_no,
     dateIso: new Date(firstRow.invoice_date || firstRow.created_at).toISOString(),
     customer: { 
+      code: customerCode,
       name: customer?.name ?? "Walk-in Customer", 
       phone: customer?.phone ?? "",
       vat: customer?.customer_vat ?? "",
@@ -398,6 +401,7 @@ app.get("/api/customers", async (_req, res) => {
 // create
 app.post("/api/customers", async (req, res) => {
   const schema = z.object({ 
+    customer_code: z.string().optional().nullable(),
     name: z.string().min(1), 
     phone: z.string().optional().nullable(), 
     email: z.string().optional().nullable(),
@@ -408,8 +412,8 @@ app.post("/api/customers", async (req, res) => {
   });
   const d = schema.parse(req.body);
   const [r]: any = await pool.query(
-    "INSERT INTO customers (name, phone, email, customer_address, customer_vat, route, sales_rep_id, is_system) VALUES (?,?,?,?,?,?,?,?)", 
-    [d.name, d.phone ?? null, d.email ?? null, d.customer_address ?? null, d.customer_vat ?? null, d.route ?? null, d.sales_rep_id ?? null, true]
+    "INSERT INTO customers (customer_code, name, phone, email, customer_address, customer_vat, route, sales_rep_id, is_system) VALUES (?,?,?,?,?,?,?,?,?)", 
+    [d.customer_code ?? null, d.name, d.phone ?? null, d.email ?? null, d.customer_address ?? null, d.customer_vat ?? null, d.route ?? null, d.sales_rep_id ?? null, true]
   );
   res.status(201).json({ ok: true, id: r.insertId, ...d, is_system: true });
 });
@@ -418,6 +422,7 @@ app.post("/api/customers", async (req, res) => {
 app.put("/api/customers/:id", async (req, res) => {
   const id = Number(req.params.id);
   const schema = z.object({ 
+    customer_code: z.string().optional().nullable(),
     name: z.string().min(1), 
     phone: z.string().optional().nullable(), 
     email: z.string().optional().nullable(),
@@ -428,8 +433,8 @@ app.put("/api/customers/:id", async (req, res) => {
   });
   const d = schema.parse(req.body);
   await pool.query(
-    "UPDATE customers SET name=?, phone=?, email=?, customer_address=?, customer_vat=?, route=?, sales_rep_id=? WHERE id=?", 
-    [d.name, d.phone ?? null, d.email ?? null, d.customer_address ?? null, d.customer_vat ?? null, d.route ?? null, d.sales_rep_id ?? null, id]
+    "UPDATE customers SET customer_code=?, name=?, phone=?, email=?, customer_address=?, customer_vat=?, route=?, sales_rep_id=? WHERE id=?", 
+    [d.customer_code ?? null, d.name, d.phone ?? null, d.email ?? null, d.customer_address ?? null, d.customer_vat ?? null, d.route ?? null, d.sales_rep_id ?? null, id]
   );
   res.json({ ok: true });
 });

@@ -40,7 +40,7 @@ export function invoiceHtml(inv: {
   company: { name: string; address: string; phone?: string; logoUrl?: string };
   invoice_no: string;
   dateIso: string;
-  customer: { name: string; phone?: string; vat?: string; address?: string; salesRep?: string };
+  customer: { code?: string; name: string; phone?: string; vat?: string; address?: string; salesRep?: string };
   items: Array<{ name: string; qty: number; price: number; discount?: number; line_total: number; pack_size?: string }>;
   sub_total: number; tax: number; discount: number; total: number;
   batchNo?: string; paymentType?: string; routeRepCode?: string;
@@ -262,7 +262,7 @@ export function invoiceHtml(inv: {
     <div class="customer-block">
       <div class="info-row">
         <div class="info-label">Customer Code :</div>
-        <div class="info-value"></div>
+        <div class="info-value">${inv.customer.code || '-'}</div>
       </div>
       <div class="info-row">
         <div class="info-label">Customer Name :</div>
@@ -399,6 +399,7 @@ export function invoiceDotMatrixHtml(inv: {
 
   // Header block positions: we rely on vertical spacing approximated for pre-printed lines.
   const lines: string[] = [];
+  lines.push(`Customer Code : ${inv.customer.code || '-'}`);
   lines.push(`Customer Name : ${inv.customer.name}`);
   lines.push(`Address       : ${(inv.customer.address||'')}`);
   lines.push(`Sales Rep     : ${(inv.customer.salesRep||'')}`);

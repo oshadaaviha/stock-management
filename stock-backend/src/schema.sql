@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE TABLE IF NOT EXISTS customers (
   id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  customer_code VARCHAR(50) NULL UNIQUE,
   name VARCHAR(180) NOT NULL,
   phone VARCHAR(40) NULL,
   email VARCHAR(160) NULL,
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS customers (
   sales_rep_id BIGINT UNSIGNED NULL,
   is_system BOOLEAN DEFAULT TRUE COMMENT 'TRUE if manually added, FALSE if auto-created from sales',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_customers_customer_code (customer_code),
   INDEX idx_customers_name (name),
   INDEX idx_customers_phone (phone),
   INDEX idx_customers_sales_rep (sales_rep_id),

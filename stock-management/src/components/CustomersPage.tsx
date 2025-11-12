@@ -3,7 +3,7 @@ import type { Customer } from "../types";
 import { customersApi } from "../api";
 
 export function CustomersPage() {
-  const blank: Customer = { id: 0, name: "", phone: "", email: "", customer_address: "", customer_vat: "", route: "", sales_rep_id: undefined } as Customer;
+  const blank: Customer = { id: 0, customer_code: "", name: "", phone: "", email: "", customer_address: "", customer_vat: "", route: "", sales_rep_id: undefined } as Customer;
   const [list, setList] = useState<Customer[]>([]);
   const [form, setForm] = useState<Customer>(blank);
   const [editing, setEditing] = useState(false);
@@ -82,7 +82,8 @@ export function CustomersPage() {
   const filtered = list.filter((c) => {
     if (!q.trim()) return true;
     const s = q.trim().toLowerCase();
-    return c.name?.toLowerCase().includes(s) || 
+    return (c.customer_code ?? "").toLowerCase().includes(s) ||
+           c.name?.toLowerCase().includes(s) || 
            (c.phone ?? "").toLowerCase().includes(s) || 
            (c.email ?? "").toLowerCase().includes(s) ||
            (c.customer_address ?? "").toLowerCase().includes(s) ||
@@ -96,7 +97,7 @@ export function CustomersPage() {
       <div className="hstack" style={{ gap: 12, marginBottom: 20 }}>
         <div style={{ flex: 1 }} ref={containerRef}>
           <div style={{ position: 'relative', maxWidth: 420 }}>
-            <input className="input" placeholder="Search by name, phone, email, address or VAT" value={q} onChange={(e) => { setQ(e.target.value); setShowDropdown(true); }} onFocus={() => setShowDropdown(true)} />
+            <input className="input" placeholder="Search by code, name, phone, email, address or VAT" value={q} onChange={(e) => { setQ(e.target.value); setShowDropdown(true); }} onFocus={() => setShowDropdown(true)} />
             {showDropdown && q.trim() && (
               <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 6px)', background: 'white', border: '1px solid #ddd', borderRadius: 6, boxShadow: '0 6px 18px rgba(0,0,0,0.08)', zIndex: 40, maxHeight: 260, overflow: 'auto' }}>
                 {filtered.slice(0, 8).map((c) => (
@@ -121,6 +122,11 @@ export function CustomersPage() {
         
         <div className="hstack" style={{ gap: 16, alignItems: 'start' }}>
           <div style={{ flex: 1 }}>
+            <label>Customer Code</label>
+            <input value={form.customer_code ?? ""} onChange={(e) => setForm({ ...form, customer_code: e.target.value || undefined })} placeholder="e.g., CUST-001" />
+          </div>
+          
+          <div style={{ flex: 1 }}>
             <label>Name *</label>
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Customer name" />
           </div>
@@ -129,14 +135,14 @@ export function CustomersPage() {
             <label>Phone</label>
             <input value={form.phone ?? ""} onChange={(e) => setForm({ ...form, phone: e.target.value || undefined })} placeholder="Phone number" />
           </div>
-          
+        </div>
+
+        <div className="hstack" style={{ gap: 16, alignItems: 'start' }}>
           <div style={{ flex: 1 }}>
             <label>Email</label>
             <input type="email" value={form.email ?? ""} onChange={(e) => setForm({ ...form, email: e.target.value || undefined })} placeholder="Email address" />
           </div>
-        </div>
-
-        <div className="hstack" style={{ gap: 16, alignItems: 'start' }}>
+          
           <div style={{ flex: 1 }}>
             <label>Address</label>
             <textarea 
@@ -147,12 +153,16 @@ export function CustomersPage() {
               style={{ resize: 'vertical' }}
             />
           </div>
-          
+        </div>
+
+        <div className="hstack" style={{ gap: 16, alignItems: 'start' }}>
           <div style={{ flex: 1 }}>
             <label>VAT Number</label>
             <input value={form.customer_vat ?? ""} onChange={(e) => setForm({ ...form, customer_vat: e.target.value || undefined })} placeholder="VAT registration number" />
-            
-            <label style={{ marginTop: 8 }}>Route</label>
+          </div>
+          
+          <div style={{ flex: 1 }}>
+            <label>Route</label>
             <input value={form.route ?? ""} onChange={(e) => setForm({ ...form, route: e.target.value || undefined })} placeholder="Delivery route" />
           </div>
         </div>
@@ -172,6 +182,7 @@ export function CustomersPage() {
         <table>
             <thead>
               <tr>
+                <th>Code</th>
                 <th>Name</th>
                 <th>Phone</th>
                 <th>Email</th>
@@ -184,6 +195,7 @@ export function CustomersPage() {
             <tbody>
               {filtered.map((c) => (
                 <tr key={c.id}>
+                  <td>{c.customer_code || '-'}</td>
                   <td>{c.name}</td>
                   <td>{c.phone}</td>
                   <td>{c.email}</td>
