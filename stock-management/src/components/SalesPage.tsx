@@ -138,38 +138,41 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
   function addToCart() {
     const p = products.find((x) => x.sku === sku);
     if (!p) return alert("Product not found");
-    // Validate against purchase_items stock instead of aggregate product qty
-    let available = 0;
-    let usedInCartUnits = 0;
-    if (selectedItemBatch && selectedItemBatch.startsWith('PI#')) {
-      available = getPiAvailableForBatch(p.sku, selectedItemBatch);
-      usedInCartUnits = cart
-        .filter(i => i.sku === p.sku && (i as any).batchNo === selectedItemBatch)
-        .reduce((s, i) => s + (i.qty * packUnitsFrom((i as any).packSize || '')), 0);
-    } else {
-      available = getPiAvailableForSku(p.sku);
-      usedInCartUnits = cart.filter(i => i.sku === p.sku).reduce((s, i) => s + (i.qty * packUnitsFrom((i as any).packSize || '')), 0);
+    
+    // Allow qty = 0 (for write-offs, samples, etc.) - skip stock validation
+    if (qty > 0) {
+      // Validate against purchase_items stock in PACKS (not units)
+      let available = 0;
+      let usedInCartPacks = 0;
+      if (selectedItemBatch && selectedItemBatch.startsWith('PI#')) {
+        available = getPiAvailableForBatch(p.sku, selectedItemBatch);
+        usedInCartPacks = cart
+          .filter(i => i.sku === p.sku && (i as any).batchNo === selectedItemBatch)
+          .reduce((s, i) => s + i.qty, 0);
+      } else {
+        available = getPiAvailableForSku(p.sku);
+        usedInCartPacks = cart.filter(i => i.sku === p.sku).reduce((s, i) => s + i.qty, 0);
+      }
+      // Check if we have enough PACKS
+      if (available - usedInCartPacks < qty) return alert("Not enough stock");
     }
-    // convert requested packs to units for validation
-    const unitsPerPack = packUnitsFrom(selectedItemBatch ? productBatches.find(b=>b.batch_number===selectedItemBatch)?.pack_size || packSize : packSize);
-    if (available - usedInCartUnits < qty * unitsPerPack) return alert("Not enough stock");
     
     // Calculate discount amount from percentage
     const discountAmount = (Number(p.price) * discount) / 100;
     
     const existing = cart.find((i) => i.sku === p.sku && (selectedItemBatch ? (i as any).batchNo === selectedItemBatch : !(i as any).batchNo));
     if (existing) {
-      // Re-validate with purchase_items before increasing
-      if (selectedItemBatch && selectedItemBatch.startsWith('PI#')) {
-        const avail = getPiAvailableForBatch(p.sku, selectedItemBatch);
-        const existingUnits = existing.qty * packUnitsFrom((existing as any).packSize);
-        const addedUnits = qty * packUnitsFrom(packSize || (productBatches.find(b=>b.batch_number===selectedItemBatch)?.pack_size));
-        if (avail < existingUnits + addedUnits) return alert("Not enough stock");
-      } else {
-        const avail = getPiAvailableForSku(p.sku);
-        const totalInCartUnits = cart.filter(i => i.sku === p.sku).reduce((s,i)=>s + i.qty * packUnitsFrom((i as any).packSize),0);
-        const addedUnits = qty * packUnitsFrom(packSize);
-        if (avail < totalInCartUnits + addedUnits) return alert("Not enough stock");
+      // Re-validate with purchase_items before increasing (only if qty > 0)
+      if (qty > 0) {
+        if (selectedItemBatch && selectedItemBatch.startsWith('PI#')) {
+          const avail = getPiAvailableForBatch(p.sku, selectedItemBatch);
+          const existingPacks = existing.qty;
+          if (avail < existingPacks + qty) return alert("Not enough stock");
+        } else {
+          const avail = getPiAvailableForSku(p.sku);
+          const totalInCartPacks = cart.filter(i => i.sku === p.sku).reduce((s,i)=>s + i.qty, 0);
+          if (avail < totalInCartPacks + qty) return alert("Not enough stock");
+        }
       }
       setCart(c => c.map((i) => (i.sku === p.sku ? { ...i, qty: i.qty + qty } : i)));
     } else {
@@ -722,7 +725,7 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
               onChange={(e) => {
                 const val = e.target.value;
                 if (val === '' || /^\d+$/.test(val)) {
-                  setQty(val === '' ? 1 : Math.max(1, Number(val)));
+                  setQty(val === '' ? 0 : Math.max(0, Number(val)));
                 }
               }}
               placeholder="Qty"

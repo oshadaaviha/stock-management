@@ -46,20 +46,12 @@ app.post("/api/purchases", async (req, res) => {
     const pid = res1.insertId;
 
     for (const it of d.items) {
-      // Convert pack qty to units: e.g., if packSize="6x10" and qty=2 packs, store 120 units
-      const packUnits = (() => {
-        const nums = (it.pack_size || '').match(/\d+/g)?.map(Number);
-        if (!nums || nums.length === 0) return 1;
-        return nums.reduce((a,b)=>a*b,1);
-      })();
-      const unitsToStore = it.qty * packUnits;
-
       await conn.query(
         "INSERT INTO purchase_items (purchase_id, product_id, mfg_date, exp_date, pack_size, price, cost, qty, line_total) VALUES (?,?,?,?,?,?,?,?,?)",
-        [pid, it.productId, it.mfg_date, it.exp_date, it.pack_size, it.price, it.cost, unitsToStore, it.qty * it.cost]
+        [pid, it.productId, it.mfg_date, it.exp_date, it.pack_size, it.price, it.cost, it.qty, it.qty * it.cost]
       );
       await conn.query("UPDATE products SET qty = qty + ?, cost=?, price=? WHERE id=?",
-        [unitsToStore, it.cost, it.price, it.productId]);
+        [it.qty, it.cost, it.price, it.productId]);
     }
     await conn.commit();
     res.status(201).json({ ok: true, purchaseId: pid });
@@ -84,7 +76,7 @@ app.post("/api/sales", async (req, res) => {
     }),
     items: z.array(z.object({
       sku: z.string(),
-      qty: z.number().int().positive(), // number of packs being sold
+      qty: z.number().int().nonnegative(), // number of packs being sold (0 allowed for write-offs)
       price: z.number().nonnegative(), // unit price (per 1 unit)
       discount: z.number().nonnegative().default(0), // unit discount
       packSize: z.string().optional(), // e.g. "10" or "6x10"
@@ -138,51 +130,57 @@ app.post("/api/sales", async (req, res) => {
         if (!nums || nums.length === 0) return 1;
         return nums.reduce((a,b)=>a*b,1);
       })();
-      const unitsNeededTotal = it.qty * packUnits;
+      
+      // Only validate and deduct stock if qty > 0
       let piUsed: { id: number, qty: number }[] = [];
-      if (it.batchNo && it.batchNo.startsWith('PI#')) {
-        // If a specific purchase_items row is selected, only check and decrement that row
-        const piId = Number(it.batchNo.replace('PI#', ''));
-        const [piRows]: any = await conn.query("SELECT id, qty FROM purchase_items WHERE id=?", [piId]);
-        if (!piRows.length || piRows[0].qty < unitsNeededTotal) throw new Error("INSUFFICIENT_STOCK");
-        piUsed.push({ id: piId, qty: unitsNeededTotal });
-      } else {
-        // Use purchase_items for stock validation and decrement (FIFO by expiry)
-        const [piRows]: any = await conn.query(
-          "SELECT id, qty, exp_date FROM purchase_items WHERE product_id = (SELECT id FROM products WHERE sku=?) AND qty > 0 ORDER BY exp_date ASC, id ASC",
-          [it.sku]
-        );
-        let remaining = unitsNeededTotal;
-        for (const pi of piRows) {
-          if (remaining <= 0) break;
-          const take = Math.min(pi.qty, remaining);
-          if (take > 0) {
-            piUsed.push({ id: pi.id, qty: take });
-            remaining -= take;
+      if (it.qty > 0) {
+        // it.qty = number of PACKS to sell
+        // We need to deduct PACKS from purchase_items (not units)
+        if (it.batchNo && it.batchNo.startsWith('PI#')) {
+          // If a specific purchase_items row is selected, only check and decrement that row
+          const piId = Number(it.batchNo.replace('PI#', ''));
+          const [piRows]: any = await conn.query("SELECT id, qty FROM purchase_items WHERE id=?", [piId]);
+          if (!piRows.length || piRows[0].qty < it.qty) throw new Error("INSUFFICIENT_STOCK");
+          piUsed.push({ id: piId, qty: it.qty });
+        } else {
+          // Use purchase_items for stock validation and decrement (FIFO by expiry)
+          // Check if we have enough PACKS available
+          const [piRows]: any = await conn.query(
+            "SELECT id, qty, exp_date FROM purchase_items WHERE product_id = (SELECT id FROM products WHERE sku=?) AND qty > 0 ORDER BY exp_date ASC, id ASC",
+            [it.sku]
+          );
+          let remaining = it.qty; // remaining PACKS needed
+          for (const pi of piRows) {
+            if (remaining <= 0) break;
+            const take = Math.min(pi.qty, remaining);
+            if (take > 0) {
+              piUsed.push({ id: pi.id, qty: take });
+              remaining -= take;
+            }
           }
+          if (remaining > 0) throw new Error("INSUFFICIENT_STOCK");
         }
-        if (remaining > 0) throw new Error("INSUFFICIENT_STOCK");
+
+        // Decrement qty (PACKS) from each used purchase_items row
+        for (const used of piUsed) {
+          await conn.query("UPDATE purchase_items SET qty = qty - ? WHERE id = ?", [used.qty, used.id]);
+        }
+
+        // If batch specified and not a PI# row, also decrement stock_batches (stored in PACKS)
+        if (it.batchNo && !it.batchNo.startsWith('PI#')) {
+          const [batchRows]: any = await conn.query(
+            "SELECT id, quantity FROM stock_batches WHERE batch_number=? AND product_id=(SELECT id FROM products WHERE sku=?) LIMIT 1",
+            [it.batchNo, it.sku]
+          );
+          if (!batchRows.length || batchRows[0].quantity < it.qty) throw new Error("INSUFFICIENT_BATCH_STOCK");
+          await conn.query(
+              "UPDATE stock_batches SET quantity = quantity - ? WHERE id=?",
+            [it.qty, batchRows[0].id]
+          );
+        }
       }
 
-      // Decrement qty from each used purchase_items row
-      for (const used of piUsed) {
-        await conn.query("UPDATE purchase_items SET qty = qty - ? WHERE id = ?", [used.qty, used.id]);
-      }
-
-      // If batch specified and not a PI# row, also decrement stock_batches
-      if (it.batchNo && !it.batchNo.startsWith('PI#')) {
-        const [batchRows]: any = await conn.query(
-          "SELECT id, quantity FROM stock_batches WHERE batch_number=? AND product_id=(SELECT id FROM products WHERE sku=?) LIMIT 1",
-          [it.batchNo, it.sku]
-        );
-        if (!batchRows.length || batchRows[0].quantity < unitsNeededTotal) throw new Error("INSUFFICIENT_BATCH_STOCK");
-        await conn.query(
-          "UPDATE stock_batches SET quantity = quantity - ? WHERE id=?",
-          [unitsNeededTotal, batchRows[0].id]
-        );
-      }
-
-      // Insert sales row
+      // Insert sales row (always, even if qty=0)
       const [prodRows]: any = await conn.query("SELECT id, name FROM products WHERE sku=?", [it.sku]);
       const productName = prodRows.length ? prodRows[0].name : it.sku;
       const lineTotal = (it.qty * packUnits) * (it.price - it.discount);
@@ -211,8 +209,10 @@ app.post("/api/sales", async (req, res) => {
           lineTotal
         ]
       );
-      // Update product aggregate stock
-      await conn.query("UPDATE products SET qty = qty - ? WHERE sku= ?", [unitsNeededTotal, it.sku]);
+      // Update product aggregate stock (PACKS) only if qty > 0
+      if (it.qty > 0) {
+        await conn.query("UPDATE products SET qty = qty - ? WHERE sku= ?", [it.qty, it.sku]);
+      }
     }
 
     await conn.commit();
