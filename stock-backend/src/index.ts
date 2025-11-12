@@ -46,12 +46,20 @@ app.post("/api/purchases", async (req, res) => {
     const pid = res1.insertId;
 
     for (const it of d.items) {
+      // Convert pack qty to units: e.g., if packSize="6x10" and qty=2 packs, store 120 units
+      const packUnits = (() => {
+        const nums = (it.pack_size || '').match(/\d+/g)?.map(Number);
+        if (!nums || nums.length === 0) return 1;
+        return nums.reduce((a,b)=>a*b,1);
+      })();
+      const unitsToStore = it.qty * packUnits;
+
       await conn.query(
         "INSERT INTO purchase_items (purchase_id, product_id, mfg_date, exp_date, pack_size, price, cost, qty, line_total) VALUES (?,?,?,?,?,?,?,?,?)",
-        [pid, it.productId, it.mfg_date, it.exp_date, it.pack_size, it.price, it.cost, it.qty, it.qty * it.cost]
+        [pid, it.productId, it.mfg_date, it.exp_date, it.pack_size, it.price, it.cost, unitsToStore, it.qty * it.cost]
       );
       await conn.query("UPDATE products SET qty = qty + ?, cost=?, price=? WHERE id=?",
-        [it.qty, it.cost, it.price, it.productId]);
+        [unitsToStore, it.cost, it.price, it.productId]);
     }
     await conn.commit();
     res.status(201).json({ ok: true, purchaseId: pid });

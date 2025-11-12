@@ -140,19 +140,19 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
     if (!p) return alert("Product not found");
     // Validate against purchase_items stock instead of aggregate product qty
     let available = 0;
-    let usedInCart = 0;
+    let usedInCartUnits = 0;
     if (selectedItemBatch && selectedItemBatch.startsWith('PI#')) {
       available = getPiAvailableForBatch(p.sku, selectedItemBatch);
-      usedInCart = cart
+      usedInCartUnits = cart
         .filter(i => i.sku === p.sku && (i as any).batchNo === selectedItemBatch)
-        .reduce((s, i) => s + i.qty, 0);
+        .reduce((s, i) => s + (i.qty * packUnitsFrom((i as any).packSize || '')), 0);
     } else {
       available = getPiAvailableForSku(p.sku);
-      usedInCart = cart.filter(i => i.sku === p.sku).reduce((s, i) => s + i.qty, 0);
+      usedInCartUnits = cart.filter(i => i.sku === p.sku).reduce((s, i) => s + (i.qty * packUnitsFrom((i as any).packSize || '')), 0);
     }
     // convert requested packs to units for validation
     const unitsPerPack = packUnitsFrom(selectedItemBatch ? productBatches.find(b=>b.batch_number===selectedItemBatch)?.pack_size || packSize : packSize);
-    if (available - usedInCart < qty * unitsPerPack) return alert("Not enough stock");
+    if (available - usedInCartUnits < qty * unitsPerPack) return alert("Not enough stock");
     
     // Calculate discount amount from percentage
     const discountAmount = (Number(p.price) * discount) / 100;
