@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import type { Product } from '../types';
-import { generateSku, money } from '../utils';
+import { generateSku} from '../utils';
 import { productsApi } from '../api';
 
 export function ProductsPage({ products, setProducts }: { products: Product[]; setProducts: (p: Product[]) => void; }) {
