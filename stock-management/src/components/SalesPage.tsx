@@ -395,7 +395,10 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
     <section className="card vstack">
       <h2>Sales / Invoice</h2>
       
-      <div className="card">
+      <div className="card"  style={{
+    position: 'relative',
+    zIndex: showCustomerDropdown ? 20 : 1,   // ⬅️ key line
+  }}>
         <div className="flex gap-4">
           <div className="input-group" style={{ flex: 1 }}>
             <label>Invoice Number</label>
@@ -534,18 +537,19 @@ export function SalesPage({ products, setProducts }: { products: Product[]; setP
                   <span style={{ marginLeft: 6, color: '#6c757d' }}>{routeRepCode}</span>
                 </div>
               )}
-            </div>
-            {customerAddress && (
-              <div style={{ marginTop: 8, fontSize: 13 }}>
+              {customerAddress && (
+              <div>
                 <strong style={{ color: '#495057' }}>Address:</strong>
                 <span style={{ marginLeft: 6, color: '#6c757d' }}>{customerAddress}</span>
               </div>
             )}
+            </div>
           </div>
         )}
       </div>
 
-      <div className="card" style={{ overflow: 'visible', marginBottom: (showProductDropdown && sku.trim()) ? 260 : undefined }}>
+      <div className="card" style={{ position: 'relative',
+    zIndex: showProductDropdown ? 20 : 1,}}>
         <div className="flex gap-4">
           <div className="input-group" style={{ flex: 2 }} ref={prodRef}>
             <label>Product SKU</label>
